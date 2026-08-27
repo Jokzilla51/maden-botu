@@ -622,30 +622,13 @@ function getDepositItemsInInventory() {
 }
 
 /**
- * Anti-Cheat Yumuşak Kafa Çevirme (Smooth LookAt)
+ * Anti-Cheat Güvenli Kafa Çevirme (Vanilla Standart Protokol)
  */
 async function smoothLookAt(targetVec) {
-  if (!config.antiCheat.humanizeRotations) {
-    return bot.lookAt(targetVec);
-  }
-
-  const steps = config.antiCheat.rotationSteps || 4;
-  const delay = config.antiCheat.rotationStepDelayMs || 25;
-
-  const currentYaw = bot.entity.yaw;
-  const currentPitch = bot.entity.pitch;
-
-  const delta = targetVec.minus(bot.entity.position.offset(0, bot.entity.height, 0));
-  const targetYaw = Math.atan2(-delta.x, -delta.z);
-  const groundDistance = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
-  const targetPitch = Math.atan2(delta.y, groundDistance);
-
-  for (let i = 1; i <= steps; i++) {
-    const intermediateYaw = currentYaw + ((targetYaw - currentYaw) * i) / steps;
-    const intermediatePitch = currentPitch + ((targetPitch - currentPitch) * i) / steps;
-    await bot.look(intermediateYaw, intermediatePitch, true);
-    await sleep(delay);
-  }
+  try {
+    await bot.lookAt(targetVec, false);
+    await sleep(60);
+  } catch (e) {}
 }
 
 /**
@@ -666,7 +649,7 @@ async function startMiningLoop() {
     defaultMove.canDig = false; // Yolda yürürken yerdeki rastgele blokları kırmasın
     defaultMove.allow1by1towers = false;
     defaultMove.allowParkour = true;
-    defaultMove.maxDropDown = config.mining.maxDropDown || 15; // Yüksekten maden çukuruna güvenle atlasın
+    defaultMove.maxDropDown = config.mining.maxDropDown || 20;
     bot.pathfinder.setMovements(defaultMove);
   } catch (e) {}
 
@@ -714,9 +697,9 @@ async function startMiningLoop() {
       return targetNames.some((t) => bName === t.toLowerCase() || bName.includes(t.toLowerCase()) || bName.includes('netherite') || bName.includes('debris'));
     };
 
-    // Geniş alanda (96 blok yarıçap) Netherite bloklarını ara
-    const searchRadius = config.mining.searchRadius || 96;
-    const reachDist = config.mining.reachDistance || 4.2;
+    // Geniş alanda (64 blok yarıçap) Netherite bloklarını ara
+    const searchRadius = config.mining.searchRadius || 64;
+    const reachDist = config.mining.reachDistance || 3.8;
 
     const blockPositions = bot.findBlocks({
       matching: matchingFn,
@@ -749,24 +732,18 @@ async function startMiningLoop() {
 
     const dist = botPos.distanceTo(targetPos);
 
-    // Eğer blok uzaktaysa (Örn: Bot yüksekte doğduysa veya 50 metre uzaktaysa), hedefe yürü / aşağı atla!
+    // Eğer blok uzaktaysa, hedefe güvenle yürü / aşağı atla!
     if (dist > reachDist) {
       try {
-        console.log(chalk.blue(`[YAPAY ZEKA] Netherite bloğuna (${targetPos.x}, ${targetPos.y}, ${targetPos.z} | Mesafe: ${dist.toFixed(1)}m) yaklaşılıyor / aşağı atlanıyor...`));
-        bot.pathfinder.setGoal(new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 2.5));
-        
-        // Mesafeye göre bekleme süresi (en fazla 8 saniye)
-        const maxWaitSteps = Math.min(80, Math.max(30, Math.floor(dist * 2)));
-        let pathWait = 0;
-        while (bot.pathfinder.isMoving() && pathWait < maxWaitSteps) {
-          await sleep(100);
-          pathWait++;
-          if (bot.entity.position.distanceTo(targetPos) <= reachDist) {
-            bot.pathfinder.stop();
-            break;
-          }
-        }
-      } catch (err) {}
+        console.log(chalk.blue(`[YAPAY ZEKA] Netherite bloğuna (${targetPos.x}, ${targetPos.y}, ${targetPos.z} | Mesafe: ${dist.toFixed(1)}m) gidiliyor...`));
+        const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 2.5);
+        await bot.pathfinder.goto(goal);
+        await sleep(150); // Hareket durduktan sonra momentumun oturması için bekle
+      } catch (err) {
+        // Hedefe ulaşılamadıysa geçici 15s kara listeye al
+        unbreakableBlacklist.set(targetKey, Date.now() + 15000);
+        continue;
+      }
     }
 
     // Tekrar bloğu ve mesafeyi kontrol et
@@ -777,14 +754,13 @@ async function startMiningLoop() {
       continue;
     }
 
-    if (currentDist > reachDist + 1.0) {
-      // Hala çok uzaktaysa geçici 15s kara listeye al, sıradaki bloğa geç
+    if (currentDist > reachDist + 0.5) {
       unbreakableBlacklist.set(targetKey, Date.now() + 15000);
       continue;
     }
 
     try {
-      // Bloğun merkezine yumuşakça bak
+      // Bloğun merkezine bak
       const blockCenter = targetPos.offset(0.5, 0.5, 0.5);
       await smoothLookAt(blockCenter);
 

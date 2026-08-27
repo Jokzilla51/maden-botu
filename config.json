@@ -27,9 +27,9 @@
       "netherite_block",
       "ancient_debris"
     ],
-    "reachDistance": 4.2,
-    "searchRadius": 96,
-    "maxDropDown": 35,
+    "reachDistance": 3.8,
+    "searchRadius": 64,
+    "maxDropDown": 20,
     "minPickaxeDurability": 20,
     "autoEat": true
   },
@@ -45,8 +45,8 @@
       "gold_ingot",
       "raw_gold"
     ],
-    "depositDelayMinMs": 120,
-    "depositDelayMaxMs": 220,
+    "depositDelayMinMs": 150,
+    "depositDelayMaxMs": 280,
     "pvCommandDelayMs": 1500
   },
   "repair": {
@@ -80,11 +80,9 @@
     "autoEquipShield": true
   },
   "antiCheat": {
-    "humanizeRotations": true,
-    "rotationSteps": 4,
-    "rotationStepDelayMs": 25,
-    "digDelayMinMs": 100,
-    "digDelayMaxMs": 250,
+    "humanizeRotations": false,
+    "digDelayMinMs": 120,
+    "digDelayMaxMs": 240,
     "antiAfkJiggle": true
   },
   "captcha": {
