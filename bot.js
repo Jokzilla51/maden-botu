@@ -773,7 +773,7 @@ async function startMiningLoop() {
     const currentDist = bot.entity.position.distanceTo(targetPos);
     const targetBlock = bot.blockAt(targetPos);
 
-    if (!targetBlock || !targetBlockIds.includes(targetBlock.type)) {
+    if (!targetBlock || !matchingFn(targetBlock)) {
       continue;
     }
 
