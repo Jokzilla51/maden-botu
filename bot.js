@@ -188,21 +188,27 @@ rl.on('line', async (line) => {
     return;
   }
 
-  // 7. Manuel Çöp Temizleme
+  // 7. Etraftaki Blokları Tarama (Teşhis)
+  if (['tara', 'scan', 'bloklar', 'bul'].includes(lower)) {
+    scanSurroundingBlocks();
+    return;
+  }
+
+  // 8. Manuel Çöp Temizleme
   if (['copat', 'cop', 'clean', 'trash'].includes(lower)) {
     console.log(chalk.yellow.bold('[ÇÖP] Envanterdeki gereksiz taş ve çöpler yere atılıyor...'));
     await dropJunkItems();
     return;
   }
 
-  // 8. Manuel Tamir Komutu
+  // 9. Manuel Tamir Komutu
   if (['tamir', 'repair', 'fix'].includes(lower)) {
     console.log(chalk.blue.bold(`[TAMİR] ${config.repair.command} komutu gönderiliyor...`));
     bot.chat(config.repair.command);
     return;
   }
 
-  // 9. Manuel Depolama
+  // 10. Manuel Depolama
   if (['depola', 'pv'].includes(lower)) {
     console.log(chalk.yellow.bold('[KONTROL] Manuel PV depolama tetiklendi.'));
     depositToVaults();
@@ -700,27 +706,22 @@ async function startMiningLoop() {
       break;
     }
 
-    // 3. Hedef blok ID'lerini al (netherite_block, ancient_debris vb.)
-    const targetBlockIds = [];
-    for (const name of config.mining.targetBlocks) {
-      const b = bot.registry.blocksByName[name];
-      if (b) targetBlockIds.push(b.id);
-    }
+    // 3. Hedef blokları akıllı eşleştirici ile ara (netherite_block, ancient_debris vb.)
+    const targetNames = config.mining.targetBlocks || ['netherite_block', 'ancient_debris'];
+    const matchingFn = (block) => {
+      if (!block || !block.name) return false;
+      const bName = block.name.toLowerCase();
+      return targetNames.some((t) => bName === t.toLowerCase() || bName.includes(t.toLowerCase()) || bName.includes('netherite') || bName.includes('debris'));
+    };
 
-    if (targetBlockIds.length === 0) {
-      console.log(chalk.red('[HATA] Hedef bloklar bulunamadı!'));
-      await sleep(2000);
-      continue;
-    }
-
-    // Geniş alanda (64 blok yarıçap) Netherite bloklarını ara
-    const searchRadius = config.mining.searchRadius || 64;
+    // Geniş alanda (96 blok yarıçap) Netherite bloklarını ara
+    const searchRadius = config.mining.searchRadius || 96;
     const reachDist = config.mining.reachDistance || 4.2;
 
     const blockPositions = bot.findBlocks({
-      matching: targetBlockIds,
+      matching: matchingFn,
       maxDistance: searchRadius,
-      count: 128
+      count: 256
     });
 
     // Kara listede olmayan (kırılabilen) blokları filtrele
@@ -730,13 +731,13 @@ async function startMiningLoop() {
     });
 
     if (candidatePositions.length === 0) {
-      console.log(chalk.gray(`[ARANIYOR] ${searchRadius} blok çevrede Netherite bloğu aranıyor / yenilenmesi bekleniyor...`));
+      console.log(chalk.gray(`[ARANIYOR] ${searchRadius} blok çevrede Netherite bloğu aranıyor... (Etrafı görmek için konsola 'tara' yazabilirsiniz)`));
       if (config.antiCheat.antiAfkJiggle) {
         bot.setControlState('sneak', true);
         await sleep(100);
         bot.setControlState('sneak', false);
       }
-      await sleep(1200);
+      await sleep(1500);
       continue;
     }
 
@@ -932,6 +933,46 @@ function waitForWindow(botInstance, timeoutMs) {
       reject(new Error('Window timeout'));
     }, timeoutMs);
   });
+}
+
+/**
+ * Etraftaki Blokları Tarama ve Konsola Dökme (Teşhis Aracı)
+ */
+function scanSurroundingBlocks() {
+  if (!bot || !bot.world || !bot.entity) {
+    console.log(chalk.red('[TARA] Bot veya dünya henüz yüklenmedi.'));
+    return;
+  }
+
+  const botPos = bot.entity.position.floored();
+  console.log(chalk.cyan.bold(`\n--- 🔍 ETRAF BLOK TARAMASI (Konum: X:${botPos.x}, Y:${botPos.y}, Z:${botPos.z}) ---`));
+
+  const blockCounts = {};
+  const radius = 32;
+
+  for (let x = -radius; x <= radius; x += 2) {
+    for (let y = -20; y <= 20; y += 2) {
+      for (let z = -radius; z <= radius; z += 2) {
+        const b = bot.blockAt(botPos.offset(x, y, z));
+        if (b && b.name !== 'air' && b.name !== 'cave_air' && b.name !== 'void_air') {
+          blockCounts[b.name] = (blockCounts[b.name] || 0) + 1;
+        }
+      }
+    }
+  }
+
+  const sorted = Object.entries(blockCounts).sort((a, b) => b[1] - a[1]);
+  if (sorted.length === 0) {
+    console.log(chalk.yellow('Etrafta hiç katı blok bulunamadı (Chunklar henüz yüklenmemiş olabilir).'));
+  } else {
+    console.log(chalk.white(`Etrafta tespit edilen ilk 15 blok türü:`));
+    sorted.slice(0, 15).forEach(([name, count]) => {
+      const isTarget = (config.mining.targetBlocks || []).some((t) => name.includes(t)) || name.includes('netherite');
+      const color = isTarget ? chalk.green.bold : chalk.yellow;
+      console.log(`  • ${color(name)}: ${count} adet ${isTarget ? '⭐ (HEDEF MADEN)' : ''}`);
+    });
+  }
+  console.log(chalk.cyan.bold('----------------------------------------------------------\n'));
 }
 
 // Discord Uzaktan Kontrol Arayüzü
