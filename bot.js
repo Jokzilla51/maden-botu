@@ -642,6 +642,7 @@ async function startMiningLoop() {
 
   let loopCount = 0;
   const unbreakableBlacklist = new Map(); // posKey -> expireTimestamp
+  let currentClusterAnchor = null; // Aktif kilitlenilen bölge merkezi (Vec3)
 
   // Pathfinder Hareket Kurallarını uygula (Yüksekten atlama ve güvenli yürüme)
   try {
@@ -697,14 +698,15 @@ async function startMiningLoop() {
       return targetNames.some((t) => bName === t.toLowerCase() || bName.includes(t.toLowerCase()) || bName.includes('netherite') || bName.includes('debris'));
     };
 
-    // Geniş alanda (64 blok yarıçap) Netherite bloklarını ara
-    const searchRadius = config.mining.searchRadius || 64;
+    // Geniş alanda (160 blok yarıçap) tüm Netherite bloklarını ara
+    const searchRadius = config.mining.searchRadius || 160;
     const reachDist = config.mining.reachDistance || 3.8;
+    const clusterRadius = config.mining.clusterRadius || 18;
 
     const blockPositions = bot.findBlocks({
       matching: matchingFn,
       maxDistance: searchRadius,
-      count: 256
+      count: 512
     });
 
     // Kara listede olmayan (kırılabilen) blokları filtrele
@@ -714,6 +716,7 @@ async function startMiningLoop() {
     });
 
     if (candidatePositions.length === 0) {
+      currentClusterAnchor = null;
       console.log(chalk.gray(`[ARANIYOR] ${searchRadius} blok çevrede Netherite bloğu aranıyor... (Etrafı görmek için konsola 'tara' yazabilirsiniz)`));
       if (config.antiCheat.antiAfkJiggle) {
         bot.setControlState('sneak', true);
@@ -724,10 +727,30 @@ async function startMiningLoop() {
       continue;
     }
 
-    // Bota en yakın bloğu seç
+    // --- 🎯 BÖLGE KİLİTLEME (CLUSTER-LOCK) SİSTEMİ ---
+    // 4 farklı maden bölgesi varsa bot birine kilitlenir ve oradaki tüm bloklar bitene kadar başka yere gitmez!
+    let clusterBlocks = [];
+    if (currentClusterAnchor) {
+      clusterBlocks = candidatePositions.filter((pos) => currentClusterAnchor.distanceTo(pos) <= clusterRadius);
+      if (clusterBlocks.length === 0) {
+        console.log(chalk.magenta.bold(`[BÖLGE KİLİDİ] Bu maden bölgesindeki tüm Netherite bitti! Sıradaki diğer bölgeye geçiliyor...`));
+        currentClusterAnchor = null;
+      }
+    }
+
+    if (!currentClusterAnchor) {
+      // Bota en yakın bölgeden bir blok seç ve o alana kilitlen
+      const botPos = bot.entity.position;
+      candidatePositions.sort((a, b) => botPos.distanceTo(a) - botPos.distanceTo(b));
+      currentClusterAnchor = candidatePositions[0].clone();
+      console.log(chalk.green.bold(`[BÖLGE KİLİDİ] Yeni Netherite maden bölgesine kilitlenildi (X:${currentClusterAnchor.x}, Z:${currentClusterAnchor.z}). Bu bölge temizlenene kadar odaklanılacak!`));
+      clusterBlocks = candidatePositions.filter((pos) => currentClusterAnchor.distanceTo(pos) <= clusterRadius);
+    }
+
+    // Kilitli bölge içindeki bloklardan bota en yakın olanını seç
     const botPos = bot.entity.position;
-    candidatePositions.sort((a, b) => botPos.distanceTo(a) - botPos.distanceTo(b));
-    const targetPos = candidatePositions[0];
+    clusterBlocks.sort((a, b) => botPos.distanceTo(a) - botPos.distanceTo(b));
+    const targetPos = clusterBlocks[0];
     const targetKey = `${targetPos.x},${targetPos.y},${targetPos.z}`;
 
     const dist = botPos.distanceTo(targetPos);
