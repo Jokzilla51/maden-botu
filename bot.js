@@ -657,30 +657,27 @@ async function startMiningLoop() {
 
   let loopCount = 0;
   const unbreakableBlacklist = new Map(); // posKey -> expireTimestamp
-  let currentClusterAnchor = null; // Aktif kilitlenilen bölge merkezi (Vec3)
+  let currentClusterAnchor = null;
 
-  // Pathfinder Hareket Kurallarını uygula (Yüksekten atlama ve güvenli yürüme)
+  // Pathfinder
   try {
     const defaultMove = new Movements(bot);
-    defaultMove.canDig = false; // Yolda yürürken yerdeki rastgele blokları kırmasın
+    defaultMove.canDig = false;
     defaultMove.allow1by1towers = false;
     defaultMove.allowParkour = true;
-    defaultMove.maxDropDown = config.mining.maxDropDown || 20;
+    defaultMove.maxDropDown = config.mining.maxDropDown || 25;
     bot.pathfinder.setMovements(defaultMove);
   } catch (e) {}
 
   while (isMining && !isPaused) {
     loopCount++;
 
-    // Süresi dolmuş kara liste kayıtlarını temizle
+    // Temizlik & süre kontrolü
     const now = Date.now();
     for (const [key, expire] of unbreakableBlacklist.entries()) {
-      if (now > expire) {
-        unbreakableBlacklist.delete(key);
-      }
+      if (now > expire) unbreakableBlacklist.delete(key);
     }
 
-    // Her 10 blokta bir çöpleri temizle ve sol eli kontrol et
     if (loopCount % 10 === 0) {
       await dropJunkItems();
       await equipOffhand();
@@ -688,7 +685,6 @@ async function startMiningLoop() {
 
     // 1. Envanter kontrolü
     if (isInventoryFull()) {
-      // Önce çöpleri at, hala doluysa PV'ye git
       await dropJunkItems();
       if (isInventoryFull()) {
         console.log(chalk.yellow.bold('[ENVANTER] Envanter doldu! PV kasalarına depolama başlatılıyor...'));
@@ -698,14 +694,14 @@ async function startMiningLoop() {
       }
     }
 
-    // 2. Kazma kontrolü ve kuşanma
+    // 2. Kazma kontrolü
     const hasPickaxe = await equipBestPickaxe();
     if (!hasPickaxe) {
       isMining = false;
       break;
     }
 
-    // 3. Hedef blokları akıllı eşleştirici ile ara (netherite_block, ancient_debris vb.)
+    // 3. Hedef blok eşleştirici
     const targetNames = config.mining.targetBlocks || ['netherite_block', 'ancient_debris'];
     const matchingFn = (block) => {
       if (!block || !block.name) return false;
@@ -713,74 +709,18 @@ async function startMiningLoop() {
       return targetNames.some((t) => bName === t.toLowerCase() || bName.includes(t.toLowerCase()) || bName.includes('netherite') || bName.includes('debris'));
     };
 
-    const reachDist = config.mining.reachDistance || 2.99;
-    const botEyePos = bot.entity.position.offset(0, bot.entity.height, 0);
-
-    // --- ⚡ TIER 1: ANINDA SERİ KAZMA (RAPID-FIRE) ---
-    // Eğer botun el mesafesinde hazır blok varsa, YÜRÜMEYİ VE AĞIR ARAMAYI ATLA, DİREKT KAZ!
-    const localBlocks = bot.findBlocks({
-      matching: matchingFn,
-      maxDistance: Math.ceil(reachDist),
-      count: 16
-    }).filter((pos) => {
-      const key = `${pos.x},${pos.y},${pos.z}`;
-      return !unbreakableBlacklist.has(key) && botEyePos.distanceTo(pos.offset(0.5, 0.5, 0.5)) <= reachDist;
-    });
-
-    if (localBlocks.length > 0) {
-      // En yakındakini seç ve seri şekilde kır
-      localBlocks.sort((a, b) => botEyePos.distanceTo(a.offset(0.5, 0.5, 0.5)) - botEyePos.distanceTo(b.offset(0.5, 0.5, 0.5)));
-      const targetPos = localBlocks[0];
-      const targetKey = `${targetPos.x},${targetPos.y},${targetPos.z}`;
-      const targetBlock = bot.blockAt(targetPos);
-
-      if (targetBlock && matchingFn(targetBlock)) {
-        try {
-          const blockCenter = targetPos.offset(0.5, 0.5, 0.5);
-          await smoothLookAt(blockCenter);
-          await bot.dig(targetBlock);
-          lastBlockMinedTime = Date.now();
-          stats.recordBlockMined(targetBlock.name);
-
-          // Discord Dönüm Noktası Bildirimi
-          if (config.discord && config.discord.enabled) {
-            const milestone = config.discord.milestoneEvery || 250;
-            if (stats.totalMined % milestone === 0) {
-              sendDiscordNotification(
-                config.discord.webhookUrl,
-                `Dönüm Noktası: ${stats.totalMined} Blok Kırıldı!`,
-                `⛏️ **Toplam Kırılan:** ${stats.totalMined} blok\n⚡ **Hız:** ${stats.getHourlyRate()} blok/saat\n⏳ **Süre:** ${stats.getUptime()}`,
-                15844367
-              );
-            }
-          }
-
-          await sleep(25);
-          continue; // Bir sonraki yerel bloğa anında devam et!
-        } catch (err) {
-          unbreakableBlacklist.set(targetKey, Date.now() + 30000);
-          continue;
-        }
-      }
-    }
-
-    // --- 🚶 TIER 2: YENİ BÖLGEYE / UZAKTAKİ BLOĞA GİTME ---
-    // Yakında hiç blok kalmadıysa geniş alanda ara ve en yakın kümeye yürü
+    const reachDist = config.mining.reachDistance || 3.0;
     const searchRadius = config.mining.searchRadius || 160;
-    const clusterRadius = config.mining.clusterRadius || 18;
+    const clusterRadius = config.mining.clusterRadius || 20;
 
+    // Tüm aday blokları bul
     const blockPositions = bot.findBlocks({
       matching: matchingFn,
       maxDistance: searchRadius,
       count: 256
-    });
+    }).filter((pos) => !unbreakableBlacklist.has(`${pos.x},${pos.y},${pos.z}`));
 
-    const candidatePositions = blockPositions.filter((pos) => {
-      const key = `${pos.x},${pos.y},${pos.z}`;
-      return !unbreakableBlacklist.has(key);
-    });
-
-    if (candidatePositions.length === 0) {
+    if (blockPositions.length === 0) {
       currentClusterAnchor = null;
       console.log(chalk.gray(`[ARANIYOR] ${searchRadius} blok çevrede Netherite bloğu aranıyor...`));
       if (config.antiCheat.antiAfkJiggle) {
@@ -788,14 +728,14 @@ async function startMiningLoop() {
         await sleep(100);
         bot.setControlState('sneak', false);
       }
-      await sleep(1200);
+      await sleep(1500);
       continue;
     }
 
-    // Küme / Bölge Kilitleme
+    // Kümeye kilitlenme
     let clusterBlocks = [];
     if (currentClusterAnchor) {
-      clusterBlocks = candidatePositions.filter((pos) => currentClusterAnchor.distanceTo(pos) <= clusterRadius);
+      clusterBlocks = blockPositions.filter((pos) => currentClusterAnchor.distanceTo(pos) <= clusterRadius);
       if (clusterBlocks.length === 0) {
         console.log(chalk.magenta.bold(`[BÖLGE KİLİDİ] Bu maden bölgesindeki tüm Netherite bitti! Sıradaki diğer bölgeye geçiliyor...`));
         currentClusterAnchor = null;
@@ -804,29 +744,72 @@ async function startMiningLoop() {
 
     if (!currentClusterAnchor) {
       const botPos = bot.entity.position;
-      candidatePositions.sort((a, b) => botPos.distanceTo(a) - botPos.distanceTo(b));
-      currentClusterAnchor = candidatePositions[0].clone();
+      blockPositions.sort((a, b) => botPos.distanceTo(a) - botPos.distanceTo(b));
+      currentClusterAnchor = blockPositions[0].clone();
       console.log(chalk.green.bold(`[BÖLGE KİLİDİ] Yeni Netherite maden bölgesine kilitlenildi (X:${currentClusterAnchor.x}, Z:${currentClusterAnchor.z}).`));
-      clusterBlocks = candidatePositions.filter((pos) => currentClusterAnchor.distanceTo(pos) <= clusterRadius);
+      clusterBlocks = blockPositions.filter((pos) => currentClusterAnchor.distanceTo(pos) <= clusterRadius);
     }
 
+    // En yakın bloğu seç
     const botPos = bot.entity.position;
     clusterBlocks.sort((a, b) => botPos.distanceTo(a) - botPos.distanceTo(b));
     const targetPos = clusterBlocks[0];
     const targetKey = `${targetPos.x},${targetPos.y},${targetPos.z}`;
+    let dist = botPos.distanceTo(targetPos);
 
-    const dist = botPos.distanceTo(targetPos);
-
+    // Eğer blok uzaktaysa, hedefe yürü (1.8 metre yakınına kadar)
     if (dist > reachDist) {
       try {
         console.log(chalk.blue(`[YAPAY ZEKA] Netherite bloğuna (${targetPos.x}, ${targetPos.y}, ${targetPos.z} | Mesafe: ${dist.toFixed(1)}m) gidiliyor...`));
-        const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 2.0);
+        const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 1.8);
         await bot.pathfinder.goto(goal);
         await sleep(100);
       } catch (err) {
         unbreakableBlacklist.set(targetKey, Date.now() + 15000);
         continue;
       }
+    }
+
+    // Bloğun tam önündeyiz! Bloğu kontrol et ve KAZ!
+    const targetBlock = bot.blockAt(targetPos);
+    if (!targetBlock || !matchingFn(targetBlock)) {
+      continue;
+    }
+
+    const currentDist = bot.entity.position.distanceTo(targetPos);
+    if (currentDist > reachDist + 1.2) {
+      unbreakableBlacklist.set(targetKey, Date.now() + 10000);
+      continue;
+    }
+
+    try {
+      // Bloğa bak
+      const blockCenter = targetPos.offset(0.5, 0.5, 0.5);
+      await bot.lookAt(blockCenter, true);
+
+      // Bloğu kaz
+      await bot.dig(targetBlock);
+      lastBlockMinedTime = Date.now();
+      stats.recordBlockMined(targetBlock.name);
+
+      // Discord Dönüm Noktası
+      if (config.discord && config.discord.enabled) {
+        const milestone = config.discord.milestoneEvery || 250;
+        if (stats.totalMined % milestone === 0) {
+          sendDiscordNotification(
+            config.discord.webhookUrl,
+            `Dönüm Noktası: ${stats.totalMined} Blok Kırıldı!`,
+            `⛏️ **Toplam Kırılan:** ${stats.totalMined} blok\n⚡ **Hız:** ${stats.getHourlyRate()} blok/saat\n⏳ **Süre:** ${stats.getUptime()}`,
+            15844367
+          );
+        }
+      }
+
+      await sleep(35);
+    } catch (err) {
+      console.log(chalk.yellow(`[MADENCİ] Blok kırılamadı (${targetBlock.name}), 30s pas geçiliyor...`));
+      unbreakableBlacklist.set(targetKey, Date.now() + 30000);
+      await sleep(50);
     }
   }
 
