@@ -303,6 +303,11 @@ async function onSpawn() {
     bot.chat(`/login ${config.auth.password}`);
   }
 
+  // Lobi Sunucu Seçimi (Pusula açma ve Elmas Bloğa tıklama)
+  if (config.lobbySelector && config.lobbySelector.enabled) {
+    await handleLobbySelection();
+  }
+
   // Offhand Eşya (Totem / Kalkan) Kuşan
   await equipOffhand();
 
@@ -314,6 +319,68 @@ async function onSpawn() {
   // Madencilik döngüsünü başlat
   await sleep(3000);
   startMiningLoop();
+}
+
+/**
+ * Lobi Sunucu Seçim Menüsü Yönetimi (Pusulayı aç ve Elmas Bloğa tıkla)
+ */
+async function handleLobbySelection() {
+  console.log(chalk.blue.bold('[LOBİ] Sunucu seçim kontrolü yapılıyor...'));
+  await sleep(config.lobbySelector.openDelayMs || 2500);
+
+  // Envanterde pusula (compass) var mı kontrol et
+  const compassName = config.lobbySelector.compassItem || 'compass';
+  const compassItem = bot.inventory.items().find((item) => item.name.includes(compassName));
+
+  if (!compassItem) {
+    console.log(chalk.gray('[LOBİ] Envanterde pusula bulunamadı (Zaten oyun sunucusunda olabilir).'));
+    return;
+  }
+
+  console.log(chalk.yellow.bold(`[LOBİ] Pusula bulundu (${compassItem.name}), eline alınıp sağ tıklanıyor...`));
+  try {
+    await bot.equip(compassItem, 'hand');
+    await sleep(500);
+    bot.activateItem(); // Pusulaya sağ tıkla
+  } catch (err) {
+    console.log(chalk.red(`[LOBİ HATA] Pusula kullanılamadı: ${err.message}`));
+    return;
+  }
+
+  // Sunucu Menüsünün açılmasını bekle
+  console.log(chalk.blue('[LOBİ] "Sunucu Menüsü" penceresinin açılması bekleniyor...'));
+  let menuWindow = null;
+  try {
+    menuWindow = await waitForWindow(bot, 6000);
+  } catch (err) {
+    console.log(chalk.yellow('[LOBİ] Menü penceresi açılmadı veya zaman aşımına uğradı.'));
+    return;
+  }
+
+  try {
+    const targetItemName = config.lobbySelector.targetServerItem || 'diamond_block';
+    console.log(chalk.cyan(`[LOBİ] Menü açıldı ("${menuWindow.title || 'Menü'}"). Hedef: ${targetItemName}`));
+
+    // Hedef eşyayı bul (Elmas Blok - diamond_block)
+    const targetItem = menuWindow.items().find((item) => item.name === targetItemName || item.name.includes('diamond'));
+
+    if (targetItem) {
+      console.log(chalk.green.bold(`[LOBİ] Hedef sunucu eşyası bulundu: ${targetItem.name} (Slot: ${targetItem.slot}). Tıklanıyor...`));
+      await sleep(config.lobbySelector.clickDelayMs || 1000);
+      await bot.clickWindow(targetItem.slot, 0, 0); // Normal sol tık
+      console.log(chalk.green.bold('[LOBİ] Oyun sunucusuna bağlanılıyor, bekleniyor...'));
+      await sleep(config.lobbySelector.serverSwitchWaitMs || 5000);
+    } else {
+      console.log(chalk.yellow(`[LOBİ] Menüde ${targetItemName} bulunamadı! Menüdeki eşyalar:`));
+      menuWindow.items().forEach((i) => console.log(` - Slot ${i.slot}: ${i.name}`));
+    }
+  } catch (err) {
+    console.log(chalk.red(`[LOBİ HATA] Menü tıklama hatası: ${err.message}`));
+  } finally {
+    try {
+      bot.closeWindow(menuWindow);
+    } catch (e) {}
+  }
 }
 
 function onChat(username, message) {

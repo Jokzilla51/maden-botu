@@ -1,6 +1,6 @@
 {
   "server": {
-    "host": "mc.sunucunuz.com",
+    "host": "play.avenorcraft.com",
     "port": 25565,
     "version": false
   },
@@ -10,6 +10,14 @@
     "autoLogin": true,
     "loginDelayMs": 3000,
     "warpDelayMs": 5000
+  },
+  "lobbySelector": {
+    "enabled": true,
+    "compassItem": "compass",
+    "openDelayMs": 2500,
+    "targetServerItem": "diamond_block",
+    "clickDelayMs": 1500,
+    "serverSwitchWaitMs": 5000
   },
   "mining": {
     "warpCommand": "/warp vip",
