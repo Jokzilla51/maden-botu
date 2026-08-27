@@ -734,24 +734,43 @@ async function startMiningLoop() {
         const key = `${pos.x},${pos.y},${pos.z}`;
         if (unbreakableBlacklist.has(key)) continue;
 
-        try {
-          await bot.lookAt(pos.offset(0.5, 0.5, 0.5));
-          await bot.dig(block, 'ignore');
-          lastBlockMinedTime = Date.now();
-          stats.recordBlockMined(block.name);
-          console.log(chalk.green.bold(`[KAZILDI] ${block.name} başarıyla kırıldı! (Toplam: ${stats.totalMined})`));
+        // Kazmayı eline al
+        await equipBestPickaxe();
 
-          // Discord Bildirimi
-          if (config.discord && config.discord.enabled) {
-            const milestone = config.discord.milestoneEvery || 250;
-            if (stats.totalMined % milestone === 0) {
-              sendDiscordNotification(
-                config.discord.webhookUrl,
-                `Dönüm Noktası: ${stats.totalMined} Blok Kırıldı!`,
-                `⛏️ **Toplam Kırılan:** ${stats.totalMined} blok\n⚡ **Hız:** ${stats.getHourlyRate()} blok/saat\n⏳ **Süre:** ${stats.getUptime()}`,
-                15844367
-              );
+        if (!bot.canDigBlock(block)) {
+          unbreakableBlacklist.set(key, Date.now() + 30000);
+          continue;
+        }
+
+        try {
+          // Bloğun görünen yüzüne bakarak resmi protokolle kaz (forceLook: true)
+          await bot.dig(block, true);
+          await sleep(80); // Sunucudan blok kırılma paketinin gelmesini bekle
+
+          // GERÇEK KIRILMA DOĞRULAMASI: Blok gerçekten kırıldı mı?
+          const afterBlock = bot.blockAt(pos);
+          if (!afterBlock || afterBlock.name === 'air' || afterBlock.name === 'cave_air' || !matchingFn(afterBlock)) {
+            // BAŞARILI: Blok fiziksel olarak yok oldu!
+            lastBlockMinedTime = Date.now();
+            stats.recordBlockMined(block.name);
+            console.log(chalk.green.bold(`[KAZILDI] ${block.name} GERÇEKTEN kırıldı! (Toplam Kırılan: ${stats.totalMined})`));
+
+            // Discord Bildirimi
+            if (config.discord && config.discord.enabled) {
+              const milestone = config.discord.milestoneEvery || 250;
+              if (stats.totalMined % milestone === 0) {
+                sendDiscordNotification(
+                  config.discord.webhookUrl,
+                  `Dönüm Noktası: ${stats.totalMined} Blok Kırıldı!`,
+                  `⛏️ **Toplam Kırılan:** ${stats.totalMined} blok\n⚡ **Hız:** ${stats.getHourlyRate()} blok/saat\n⏳ **Süre:** ${stats.getUptime()}`,
+                  15844367
+                );
+              }
             }
+          } else {
+            // BAŞARISIZ: Blok hala duruyor (Sunucu iptal etti veya korumalı alan)
+            console.log(chalk.yellow(`[PAS GEÇİLDİ] Blok kırılamadı veya korumalı (${block.name}), 30s atlanıyor...`));
+            unbreakableBlacklist.set(key, Date.now() + 30000);
           }
 
           await sleep(40);
