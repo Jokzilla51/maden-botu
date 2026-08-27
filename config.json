@@ -27,7 +27,7 @@
       "netherite_block",
       "ancient_debris"
     ],
-    "reachDistance": 3.8,
+    "reachDistance": 2.99,
     "searchRadius": 160,
     "clusterRadius": 18,
     "maxDropDown": 30,

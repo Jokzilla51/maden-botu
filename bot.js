@@ -715,7 +715,7 @@ async function startMiningLoop() {
 
     // Geniş alanda (160 blok yarıçap) tüm Netherite bloklarını ara
     const searchRadius = config.mining.searchRadius || 160;
-    const reachDist = config.mining.reachDistance || 3.8;
+    const reachDist = config.mining.reachDistance || 2.99;
     const clusterRadius = config.mining.clusterRadius || 18;
 
     const blockPositions = bot.findBlocks({
@@ -770,11 +770,11 @@ async function startMiningLoop() {
 
     const dist = botPos.distanceTo(targetPos);
 
-    // Eğer blok uzaktaysa, hedefe güvenle yürü / aşağı atla!
+    // Eğer blok uzaktaysa, hedefe güvenle yürü (2.0 metre yakınına kadar)
     if (dist > reachDist) {
       try {
         console.log(chalk.blue(`[YAPAY ZEKA] Netherite bloğuna (${targetPos.x}, ${targetPos.y}, ${targetPos.z} | Mesafe: ${dist.toFixed(1)}m) gidiliyor...`));
-        const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 2.5);
+        const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 2.0);
         await bot.pathfinder.goto(goal);
         await sleep(150); // Hareket durduktan sonra momentumun oturması için bekle
       } catch (err) {
@@ -792,7 +792,7 @@ async function startMiningLoop() {
       continue;
     }
 
-    if (currentDist > reachDist + 0.5) {
+    if (currentDist > reachDist + 0.3) {
       unbreakableBlacklist.set(targetKey, Date.now() + 15000);
       continue;
     }
