@@ -2,7 +2,7 @@
   "server": {
     "host": "play.avenorcraft.com",
     "port": 25565,
-    "version": false
+    "version": "1.16.5"
   },
   "auth": {
     "username": "vyronmc",
@@ -14,7 +14,7 @@
     "warpDelayMs": 5000
   },
   "lobbySelector": {
-    "enabled": true,
+    "enabled": false,
     "compassItem": "compass",
     "openDelayMs": 2500,
     "targetServerItem": "diamond_block",
@@ -27,9 +27,9 @@
       "netherite_block",
       "ancient_debris"
     ],
-    "miningRadius": 4.5,
-    "searchRadius": 16,
-    "allowPathfinding": false,
+    "reachDistance": 4.2,
+    "searchRadius": 28,
+    "maxDropDown": 15,
     "minPickaxeDurability": 20,
     "autoEat": true
   },
