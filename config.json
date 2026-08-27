@@ -82,8 +82,8 @@
   },
   "antiCheat": {
     "humanizeRotations": false,
-    "digDelayMinMs": 120,
-    "digDelayMaxMs": 240,
+    "digDelayMinMs": 20,
+    "digDelayMaxMs": 40,
     "antiAfkJiggle": true
   },
   "captcha": {
