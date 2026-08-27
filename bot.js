@@ -325,14 +325,32 @@ async function onSpawn() {
   // Offhand Eşya (Totem / Kalkan) Kuşan
   await equipOffhand();
 
-  // Warp VIP'e Işınlanma
-  console.log(chalk.blue(`[WARP] ${config.auth.warpDelayMs / 1000} saniye içinde ${config.mining.warpCommand} gönderilecek...`));
-  await sleep(config.auth.warpDelayMs);
-  bot.chat(config.mining.warpCommand);
+  // Warp VIP'e Işınlanma ve 7 Blok İleri Yürüme
+  await warpVipAndStepOff();
 
   // Madencilik döngüsünü başlat
-  await sleep(3000);
   startMiningLoop();
+}
+
+/**
+ * /warp vip atar, 7 blok ileri doğal şekilde yürür (spawn platformundan madene iner)
+ */
+async function warpVipAndStepOff() {
+  console.log(chalk.blue.bold(`[WARP] ${config.mining.warpCommand} gönderiliyor...`));
+  bot.chat(config.mining.warpCommand);
+  
+  // Işınlanma ve chunk yüklenmesini bekle
+  await sleep(2200);
+
+  // Doğal vanilla fiziği ile 7 blok ileri yürü (yaklaşık 1.6 saniye)
+  console.log(chalk.green.bold('[YAPAY ZEKA] Spawn platformundan 7 blok ileri yürünüyor (Madene iniş)...'));
+  bot.setControlState('forward', true);
+  await sleep(1600);
+  bot.setControlState('forward', false);
+
+  // Yere iniş ve momentumun oturması için bekle
+  await sleep(800);
+  lastBlockMinedTime = Date.now();
 }
 
 /**
@@ -487,8 +505,7 @@ function onDeath() {
   }
 
   setTimeout(async () => {
-    bot.chat(config.mining.warpCommand);
-    await sleep(3000);
+    await warpVipAndStepOff();
     startMiningLoop();
   }, 5000);
 }
@@ -544,9 +561,7 @@ function startWatchdog() {
       if (timeSinceLastBlock > timeout) {
         console.log(chalk.yellow.bold(`[WATCHDOG] ${Math.round(timeout / 1000)} saniyedir blok kırılamadı (sıkışma veya maden boş)!`));
         console.log(chalk.yellow(`[WATCHDOG] Konumu yenilemek için ${config.mining.warpCommand} yeniden gönderiliyor...`));
-        bot.chat(config.mining.warpCommand);
-        lastBlockMinedTime = Date.now();
-        await sleep(2000);
+        await warpVipAndStepOff();
       }
     }
   }, 10000);
@@ -906,9 +921,7 @@ async function depositToVaults() {
     }
   } else {
     console.log(chalk.green.bold('[BAŞARILI] Depolama işlemi tamamlandı. Madene geri dönülüyor...'));
-    bot.chat(config.mining.warpCommand);
-    lastBlockMinedTime = Date.now();
-    await sleep(2500);
+    await warpVipAndStepOff();
   }
 
   isDepositing = false;
