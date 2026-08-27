@@ -649,6 +649,74 @@ async function smoothLookAt(targetVec) {
 }
 
 /**
+ * %100 Uyumlu ve Güvenli Blok Kırma Motoru (Sürekli Kol Sallama + Sunucu Onayı)
+ */
+async function digBlockSafe(block, blacklist, matchingFn) {
+  if (!block) return false;
+  const key = `${block.position.x},${block.position.y},${block.position.z}`;
+  if (blacklist.has(key)) return false;
+
+  // 1. Kazmayı ele al
+  const hasPickaxe = await equipBestPickaxe();
+  if (!hasPickaxe) return false;
+
+  // 2. Bloğun görünen yüzüne bak
+  const blockCenter = block.position.offset(0.5, 0.5, 0.5);
+  try {
+    await bot.lookAt(blockCenter, true);
+  } catch (e) {}
+  await sleep(40);
+
+  // 3. Kol sallama döngüsü (Anti-Cheat'in blok kırmayı onaylaması için zorunlu)
+  let diggingActive = true;
+  const swingInterval = setInterval(() => {
+    if (!diggingActive) return;
+    try {
+      bot.swingArm('right');
+    } catch (e) {}
+  }, 180);
+
+  try {
+    // 4. Bloğu resmi protokolle kaz
+    await bot.dig(block, true);
+  } catch (err) {
+    // Hata oluştuysa
+  } finally {
+    diggingActive = false;
+    clearInterval(swingInterval);
+  }
+
+  // 5. Sunucunun blok güncelleme paketini bekle
+  await sleep(100);
+
+  // 6. Gerçek kırılma kontrolü
+  const afterBlock = bot.blockAt(block.position);
+  if (!afterBlock || afterBlock.name === 'air' || afterBlock.name === 'cave_air' || (matchingFn && !matchingFn(afterBlock))) {
+    lastBlockMinedTime = Date.now();
+    stats.recordBlockMined(block.name);
+    console.log(chalk.green.bold(`[KAZILDI] ${block.name} başarıyla kırıldı! (Toplam: ${stats.totalMined})`));
+
+    // Discord Bildirimi
+    if (config.discord && config.discord.enabled) {
+      const milestone = config.discord.milestoneEvery || 250;
+      if (stats.totalMined % milestone === 0) {
+        sendDiscordNotification(
+          config.discord.webhookUrl,
+          `Dönüm Noktası: ${stats.totalMined} Blok Kırıldı!`,
+          `⛏️ **Toplam Kırılan:** ${stats.totalMined} blok\n⚡ **Hız:** ${stats.getHourlyRate()} blok/saat\n⏳ **Süre:** ${stats.getUptime()}`,
+          15844367
+        );
+      }
+    }
+    return true;
+  } else {
+    console.log(chalk.yellow(`[ATLANDI] ${block.name} kırılamadı veya korumalı, 30s pas geçiliyor...`));
+    blacklist.set(key, Date.now() + 30000);
+    return false;
+  }
+}
+
+/**
  * Ana Madencilik Döngüsü
  */
 async function startMiningLoop() {
@@ -712,9 +780,7 @@ async function startMiningLoop() {
       return targetNames.some((t) => bName === t.toLowerCase() || bName.includes(t.toLowerCase()) || bName.includes('netherite') || bName.includes('debris'));
     };
 
-    const reachDist = config.mining.reachDistance || 3.0;
-
-    // --- 💎 1. YAKINDAKİ BLOKLARI ANINDA KAZMA (JITTER-FREE DİREKT KAZMA) ---
+    // --- 💎 1. YAKINDAKİ BLOKLARI ANINDA KAZMA ---
     const nearbyBlocks = bot.findBlocks({
       matching: matchingFn,
       maxDistance: 3.2,
@@ -722,7 +788,6 @@ async function startMiningLoop() {
     }).filter((pos) => !unbreakableBlacklist.has(`${pos.x},${pos.y},${pos.z}`));
 
     if (nearbyBlocks.length > 0) {
-      // Yakında blok varken yürümeyi durdur
       try {
         bot.pathfinder.stop();
         bot.clearControlStates();
@@ -730,52 +795,9 @@ async function startMiningLoop() {
 
       for (const pos of nearbyBlocks) {
         const block = bot.blockAt(pos);
-        if (!block || !matchingFn(block)) continue;
-        const key = `${pos.x},${pos.y},${pos.z}`;
-        if (unbreakableBlacklist.has(key)) continue;
-
-        // Kazmayı eline al
-        await equipBestPickaxe();
-
-        if (!bot.canDigBlock(block)) {
-          unbreakableBlacklist.set(key, Date.now() + 30000);
-          continue;
-        }
-
-        try {
-          // Bloğun görünen yüzüne bakarak resmi protokolle kaz (forceLook: true)
-          await bot.dig(block, true);
-          await sleep(80); // Sunucudan blok kırılma paketinin gelmesini bekle
-
-          // GERÇEK KIRILMA DOĞRULAMASI: Blok gerçekten kırıldı mı?
-          const afterBlock = bot.blockAt(pos);
-          if (!afterBlock || afterBlock.name === 'air' || afterBlock.name === 'cave_air' || !matchingFn(afterBlock)) {
-            // BAŞARILI: Blok fiziksel olarak yok oldu!
-            lastBlockMinedTime = Date.now();
-            stats.recordBlockMined(block.name);
-            console.log(chalk.green.bold(`[KAZILDI] ${block.name} GERÇEKTEN kırıldı! (Toplam Kırılan: ${stats.totalMined})`));
-
-            // Discord Bildirimi
-            if (config.discord && config.discord.enabled) {
-              const milestone = config.discord.milestoneEvery || 250;
-              if (stats.totalMined % milestone === 0) {
-                sendDiscordNotification(
-                  config.discord.webhookUrl,
-                  `Dönüm Noktası: ${stats.totalMined} Blok Kırıldı!`,
-                  `⛏️ **Toplam Kırılan:** ${stats.totalMined} blok\n⚡ **Hız:** ${stats.getHourlyRate()} blok/saat\n⏳ **Süre:** ${stats.getUptime()}`,
-                  15844367
-                );
-              }
-            }
-          } else {
-            // BAŞARISIZ: Blok hala duruyor (Sunucu iptal etti veya korumalı alan)
-            console.log(chalk.yellow(`[PAS GEÇİLDİ] Blok kırılamadı veya korumalı (${block.name}), 30s atlanıyor...`));
-            unbreakableBlacklist.set(key, Date.now() + 30000);
-          }
-
-          await sleep(40);
-        } catch (err) {
-          unbreakableBlacklist.set(key, Date.now() + 30000);
+        if (block && matchingFn(block)) {
+          await digBlockSafe(block, unbreakableBlacklist, matchingFn);
+          await sleep(30);
         }
       }
       continue;
@@ -826,7 +848,13 @@ async function startMiningLoop() {
     try {
       const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 2.0);
       await bot.pathfinder.goto(goal);
-      await sleep(100);
+      await sleep(80);
+
+      // Hedefe vardığında o bloğu da hemen kaz
+      const arrivedBlock = bot.blockAt(targetPos);
+      if (arrivedBlock && matchingFn(arrivedBlock)) {
+        await digBlockSafe(arrivedBlock, unbreakableBlacklist, matchingFn);
+      }
     } catch (err) {
       unbreakableBlacklist.set(targetKey, Date.now() + 15000);
       continue;
