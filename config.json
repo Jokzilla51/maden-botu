@@ -28,8 +28,8 @@
       "ancient_debris"
     ],
     "reachDistance": 4.2,
-    "searchRadius": 28,
-    "maxDropDown": 15,
+    "searchRadius": 64,
+    "maxDropDown": 30,
     "minPickaxeDurability": 20,
     "autoEat": true
   },

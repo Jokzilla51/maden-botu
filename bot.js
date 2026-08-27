@@ -713,14 +713,14 @@ async function startMiningLoop() {
       continue;
     }
 
-    // Geniş alanda (28 blok yarıçap) Netherite bloklarını ara
-    const searchRadius = config.mining.searchRadius || 28;
+    // Geniş alanda (64 blok yarıçap) Netherite bloklarını ara
+    const searchRadius = config.mining.searchRadius || 64;
     const reachDist = config.mining.reachDistance || 4.2;
 
     const blockPositions = bot.findBlocks({
       matching: targetBlockIds,
       maxDistance: searchRadius,
-      count: 64
+      count: 128
     });
 
     // Kara listede olmayan (kırılabilen) blokları filtrele
@@ -730,7 +730,7 @@ async function startMiningLoop() {
     });
 
     if (candidatePositions.length === 0) {
-      console.log(chalk.gray('[ARANIYOR] Kırılabilir Netherite bloğu aranıyor / yenilenmesi bekleniyor...'));
+      console.log(chalk.gray(`[ARANIYOR] ${searchRadius} blok çevrede Netherite bloğu aranıyor / yenilenmesi bekleniyor...`));
       if (config.antiCheat.antiAfkJiggle) {
         bot.setControlState('sneak', true);
         await sleep(100);
@@ -748,14 +748,16 @@ async function startMiningLoop() {
 
     const dist = botPos.distanceTo(targetPos);
 
-    // Eğer blok uzaktaysa (Örn: Bot yüksekte doğduysa), hedefe yürü / aşağı atla!
+    // Eğer blok uzaktaysa (Örn: Bot yüksekte doğduysa veya 50 metre uzaktaysa), hedefe yürü / aşağı atla!
     if (dist > reachDist) {
       try {
         console.log(chalk.blue(`[YAPAY ZEKA] Netherite bloğuna (${targetPos.x}, ${targetPos.y}, ${targetPos.z} | Mesafe: ${dist.toFixed(1)}m) yaklaşılıyor / aşağı atlanıyor...`));
         bot.pathfinder.setGoal(new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 2.5));
         
+        // Mesafeye göre bekleme süresi (en fazla 8 saniye)
+        const maxWaitSteps = Math.min(80, Math.max(30, Math.floor(dist * 2)));
         let pathWait = 0;
-        while (bot.pathfinder.isMoving() && pathWait < 40) {
+        while (bot.pathfinder.isMoving() && pathWait < maxWaitSteps) {
           await sleep(100);
           pathWait++;
           if (bot.entity.position.distanceTo(targetPos) <= reachDist) {
