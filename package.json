@@ -1,0 +1,19 @@
+{
+  "name": "minecraft-vip-bot",
+  "version": "1.0.0",
+  "description": "Minecraft VIP Otomatik Netherite Kazma ve PV Depolama Botu",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "discord.js": "^14.27.0",
+    "mineflayer": "^4.20.1",
+    "mineflayer-auto-eat": "^3.3.4",
+    "mineflayer-pathfinder": "^2.4.5",
+    "prismarine-viewer": "^1.27.0"
+  },
+  "author": "Antigravity",
+  "license": "ISC"
+}

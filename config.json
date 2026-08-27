@@ -1,0 +1,95 @@
+{
+  "server": {
+    "host": "mc.sunucunuz.com",
+    "port": 25565,
+    "version": false
+  },
+  "auth": {
+    "username": "VIP_Madenci",
+    "password": "sifreniz123",
+    "autoLogin": true,
+    "loginDelayMs": 3000,
+    "warpDelayMs": 5000
+  },
+  "mining": {
+    "warpCommand": "/warp vip",
+    "targetBlocks": [
+      "netherite_block",
+      "ancient_debris"
+    ],
+    "miningRadius": 4.5,
+    "searchRadius": 16,
+    "allowPathfinding": false,
+    "minPickaxeDurability": 20,
+    "autoEat": true
+  },
+  "vault": {
+    "pvList": [1, 2, 3, 4, 5],
+    "depositItems": [
+      "netherite_block",
+      "ancient_debris",
+      "netherite_ingot",
+      "netherite_scrap",
+      "diamond_block",
+      "diamond",
+      "gold_ingot",
+      "raw_gold"
+    ],
+    "depositDelayMinMs": 120,
+    "depositDelayMaxMs": 220,
+    "pvCommandDelayMs": 1500
+  },
+  "repair": {
+    "enabled": true,
+    "command": "/fix all",
+    "triggerDurability": 50,
+    "cooldownMs": 10000
+  },
+  "junkDropper": {
+    "enabled": true,
+    "items": [
+      "netherrack",
+      "cobblestone",
+      "stone",
+      "dirt",
+      "gravel",
+      "basalt",
+      "blackstone",
+      "andesite",
+      "diorite",
+      "granite"
+    ]
+  },
+  "watchdog": {
+    "enabled": true,
+    "noBlockTimeoutMs": 45000,
+    "reWarpOnStuck": true
+  },
+  "offhand": {
+    "autoEquipTotem": true,
+    "autoEquipShield": true
+  },
+  "antiCheat": {
+    "humanizeRotations": true,
+    "rotationSteps": 4,
+    "rotationStepDelayMs": 25,
+    "digDelayMinMs": 100,
+    "digDelayMaxMs": 250,
+    "antiAfkJiggle": true
+  },
+  "captcha": {
+    "autoSolveMath": true,
+    "autoSolveRepeat": true
+  },
+  "discord": {
+    "enabled": true,
+    "webhookUrl": "https://discord.com/api/webhooks/1542509380761813096/3RP8STnohzmrVeIaPnJyEnkiEcmyI_hwyA6ksdOVUI5ihJeTs9QwHkg7zh5ALDC61kJW",
+    "botToken": "",
+    "channelId": "",
+    "milestoneEvery": 250
+  },
+  "webViewer": {
+    "enabled": true,
+    "port": 3000
+  }
+}
