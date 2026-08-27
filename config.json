@@ -9,6 +9,8 @@
     "password": "vyronk1lan31bunubulanannesiolsun",
     "autoLogin": true,
     "loginDelayMs": 3000,
+    "serverSwitchCommand": "/box",
+    "serverSwitchDelayMs": 2500,
     "warpDelayMs": 5000
   },
   "lobbySelector": {

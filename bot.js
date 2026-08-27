@@ -303,8 +303,16 @@ async function onSpawn() {
     bot.chat(`/login ${config.auth.password}`);
   }
 
-  // Lobi Sunucu Seçimi (Pusula açma ve Elmas Bloğa tıklama)
-  if (config.lobbySelector && config.lobbySelector.enabled) {
+  // Oyun Moduna Geçiş (Örn: /box komutu)
+  if (config.auth.serverSwitchCommand) {
+    const delay = config.auth.serverSwitchDelayMs || 2500;
+    console.log(chalk.blue(`[SUNUCU GEÇİŞİ] ${delay / 1000} saniye sonra ${config.auth.serverSwitchCommand} gönderilecek...`));
+    await sleep(delay);
+    bot.chat(config.auth.serverSwitchCommand);
+    console.log(chalk.green.bold(`[SUNUCU GEÇİŞİ] ${config.auth.serverSwitchCommand} gönderildi! Oyun sunucusuna bağlanılıyor, 5 saniye bekleniyor...`));
+    await sleep(5000);
+  } else if (config.lobbySelector && config.lobbySelector.enabled) {
+    // Menü üzerinden geçiş alternatifi
     await handleLobbySelection();
   }
 
