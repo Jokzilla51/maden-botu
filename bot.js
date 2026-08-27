@@ -364,36 +364,26 @@ async function handleLobbySelection() {
       const menuWindow = await waitForWindow(bot, 5000);
       menuOpened = true;
 
-      const targetItemName = config.lobbySelector.targetServerItem || 'diamond_block';
-      let titleStr = '';
-      try {
-        titleStr = typeof menuWindow.title === 'string' ? menuWindow.title : JSON.stringify(menuWindow.title);
-      } catch (e) {}
+      // Sunucunun sandık slotlarını (0-26) doldurması için 1.5 saniye bekle
+      console.log(chalk.blue('[LOBİ] Menü açıldı, sandık slotlarının yüklenmesi bekleniyor...'));
+      await sleep(1500);
 
-      console.log(chalk.green.bold(`[LOBİ] Menü açıldı ("${titleStr}"). Hedef eşya aranıyor: ${targetItemName}...`));
-
-      // Menüdeki eşyaları listele ve hedefi bul
       const items = menuWindow.items();
-      console.log(chalk.gray(`[LOBİ] Menüde ${items.length} adet eşya var:`));
+      console.log(chalk.gray(`[LOBİ] Menü yüklendi (${items.length} adet eşya bulundu):`));
       items.forEach(i => console.log(chalk.gray(` - Slot ${i.slot}: ${i.name} (Adet: ${i.count})`)));
 
-      // Hedef eşyayı bul (Elmas Blok - diamond_block veya slot 11)
-      let targetItem = items.find((item) => item.name === targetItemName || item.name.includes('diamond'));
+      // Öncelik 1: Slot 11 (Elmas Blok)
+      const slot11Item = menuWindow.slots[11];
+      const diamondItem = items.find((i) => i.name === 'diamond_block' || i.name.includes('diamond') || i.slot === 11);
 
-      // Eğer isimle bulunamadıysa slot 11 veya ilk uygun bloğu kontrol et
-      if (!targetItem && items.length > 0) {
-        targetItem = items.find(i => i.slot === 11 || i.slot === 13) || items[0];
-      }
+      const targetSlot = 11; // Doğrudan Elmas Blok slotu
+      const itemName = (slot11Item && slot11Item.name) || (diamondItem && diamondItem.name) || 'Elmas Blok';
 
-      if (targetItem) {
-        console.log(chalk.green.bold(`[LOBİ] Hedef sunucu eşyasına tıklanıyor: ${targetItem.name} (Slot: ${targetItem.slot})`));
-        await sleep(config.lobbySelector.clickDelayMs || 1000);
-        await bot.clickWindow(targetItem.slot, 0, 0); // Normal sol tık
-        console.log(chalk.green.bold('[LOBİ] Oyun sunucusuna aktarma tıklandı! Sunucuya geçiş bekleniyor...'));
-        await sleep(config.lobbySelector.serverSwitchWaitMs || 6000);
-      } else {
-        console.log(chalk.red('[LOBİ HATA] Menüde tıklanacak hedef eşya bulunamadı!'));
-      }
+      console.log(chalk.green.bold(`[LOBİ] Elmas Blok (Slot ${targetSlot} - ${itemName}) tıklanıyor...`));
+      await bot.clickWindow(targetSlot, 0, 0); // Normal sol tık
+
+      console.log(chalk.green.bold('[LOBİ] Slot 11 tıklandı! Oyun sunucusuna bağlanılıyor, 6 saniye bekleniyor...'));
+      await sleep(config.lobbySelector.serverSwitchWaitMs || 6000);
 
       try {
         bot.closeWindow(menuWindow);
