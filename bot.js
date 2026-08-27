@@ -571,20 +571,10 @@ function startWatchdog() {
  * En iyi kazmayı seç, eline al ve gerekirse otomatik tamir komutu (/fix all) gönder
  */
 async function equipBestPickaxe() {
-  const pickaxes = bot.inventory.items().filter((item) => item.name.includes('pickaxe'));
-  if (pickaxes.length === 0) {
-    console.log(chalk.red.bold('[KAZMA UYARISI] Envanterde hiç kazma bulunamadı!'));
-    return false;
-  }
-
-  // Kazmaları türüne göre sırala (Netherite > Diamond > Iron > Stone > Gold > Wood)
-  const priority = ['netherite_pickaxe', 'diamond_pickaxe', 'iron_pickaxe', 'stone_pickaxe', 'golden_pickaxe', 'wooden_pickaxe'];
-  pickaxes.sort((a, b) => priority.indexOf(a.name) - priority.indexOf(b.name));
-
-  let selectedPickaxe = null;
-  for (const pick of pickaxes) {
-    const maxDurability = pick.maxDurability || 1561;
-    const durabilityUsed = pick.durabilityUsed || 0;
+  const held = bot.heldItem;
+  if (held && held.name && held.name.includes('pickaxe')) {
+    const maxDurability = held.maxDurability || 1561;
+    const durabilityUsed = held.durabilityUsed || 0;
     const remainingDurability = maxDurability - durabilityUsed;
 
     // Otomatik Tamir Kontrolü (/fix all, /repair vb.)
@@ -595,30 +585,42 @@ async function equipBestPickaxe() {
         console.log(chalk.blue.bold(`[TAMİR] Kazmanın canı azaldı (${remainingDurability}/${maxDurability}). ${config.repair.command} çalıştırılıyor...`));
         bot.chat(config.repair.command);
         lastRepairTime = now;
-        await sleep(1000);
+        await sleep(500);
       }
     }
 
     if (remainingDurability > config.mining.minPickaxeDurability) {
-      selectedPickaxe = pick;
-      break;
-    } else {
-      console.log(chalk.yellow(`[KAZMA] ${pick.name} canı çok az (${remainingDurability}), kırılmaması için atlandı.`));
+      return true;
     }
   }
 
-  if (!selectedPickaxe) {
-    console.log(chalk.red.bold('[KAZMA UYARISI] Kullanılabilir dayanıklılıkta kazma kalmadı! Bot duraklatılıyor.'));
-    isPaused = true;
+  const pickaxes = bot.inventory.items().filter((item) => item.name.includes('pickaxe'));
+  if (pickaxes.length === 0) {
+    console.log(chalk.red.bold('[KAZMA UYARISI] Envanterde hiç kazma bulunamadı!'));
     return false;
   }
 
-  try {
-    await bot.equip(selectedPickaxe, 'hand');
-    return true;
-  } catch (err) {
-    return false;
+  const priority = ['netherite_pickaxe', 'diamond_pickaxe', 'iron_pickaxe', 'stone_pickaxe', 'golden_pickaxe', 'wooden_pickaxe'];
+  pickaxes.sort((a, b) => priority.indexOf(a.name) - priority.indexOf(b.name));
+
+  for (const pick of pickaxes) {
+    const maxDurability = pick.maxDurability || 1561;
+    const durabilityUsed = pick.durabilityUsed || 0;
+    const remainingDurability = maxDurability - durabilityUsed;
+
+    if (remainingDurability > config.mining.minPickaxeDurability) {
+      try {
+        await bot.equip(pick, 'hand');
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
   }
+
+  console.log(chalk.red.bold('[KAZMA UYARISI] Kullanılabilir dayanıklılıkta kazma kalmadı! Bot duraklatılıyor.'));
+  isPaused = true;
+  return false;
 }
 
 /**
@@ -642,7 +644,7 @@ function getDepositItemsInInventory() {
 async function smoothLookAt(targetVec) {
   try {
     await bot.lookAt(targetVec, false);
-    await sleep(60);
+    await sleep(40);
   } catch (e) {}
 }
 
@@ -659,7 +661,7 @@ async function startMiningLoop() {
   const unbreakableBlacklist = new Map(); // posKey -> expireTimestamp
   let currentClusterAnchor = null;
 
-  // Pathfinder
+  // Pathfinder Kuralları
   try {
     const defaultMove = new Movements(bot);
     defaultMove.canDig = false;
@@ -672,12 +674,13 @@ async function startMiningLoop() {
   while (isMining && !isPaused) {
     loopCount++;
 
-    // Temizlik & süre kontrolü
+    // Süresi dolmuş kara liste kayıtlarını temizle
     const now = Date.now();
     for (const [key, expire] of unbreakableBlacklist.entries()) {
       if (now > expire) unbreakableBlacklist.delete(key);
     }
 
+    // Her 10 blokta bir çöpleri temizle ve sol eli kontrol et
     if (loopCount % 10 === 0) {
       await dropJunkItems();
       await equipOffhand();
@@ -694,7 +697,7 @@ async function startMiningLoop() {
       }
     }
 
-    // 2. Kazma kontrolü
+    // 2. Kazma kontrolü ve kuşanma
     const hasPickaxe = await equipBestPickaxe();
     if (!hasPickaxe) {
       isMining = false;
@@ -710,10 +713,59 @@ async function startMiningLoop() {
     };
 
     const reachDist = config.mining.reachDistance || 3.0;
+
+    // --- 💎 1. YAKINDAKİ BLOKLARI ANINDA KAZMA (JITTER-FREE DİREKT KAZMA) ---
+    const nearbyBlocks = bot.findBlocks({
+      matching: matchingFn,
+      maxDistance: 3.2,
+      count: 10
+    }).filter((pos) => !unbreakableBlacklist.has(`${pos.x},${pos.y},${pos.z}`));
+
+    if (nearbyBlocks.length > 0) {
+      // Yakında blok varken yürümeyi durdur
+      try {
+        bot.pathfinder.stop();
+        bot.clearControlStates();
+      } catch (e) {}
+
+      for (const pos of nearbyBlocks) {
+        const block = bot.blockAt(pos);
+        if (!block || !matchingFn(block)) continue;
+        const key = `${pos.x},${pos.y},${pos.z}`;
+        if (unbreakableBlacklist.has(key)) continue;
+
+        try {
+          await bot.lookAt(pos.offset(0.5, 0.5, 0.5));
+          await bot.dig(block, 'ignore');
+          lastBlockMinedTime = Date.now();
+          stats.recordBlockMined(block.name);
+          console.log(chalk.green.bold(`[KAZILDI] ${block.name} başarıyla kırıldı! (Toplam: ${stats.totalMined})`));
+
+          // Discord Bildirimi
+          if (config.discord && config.discord.enabled) {
+            const milestone = config.discord.milestoneEvery || 250;
+            if (stats.totalMined % milestone === 0) {
+              sendDiscordNotification(
+                config.discord.webhookUrl,
+                `Dönüm Noktası: ${stats.totalMined} Blok Kırıldı!`,
+                `⛏️ **Toplam Kırılan:** ${stats.totalMined} blok\n⚡ **Hız:** ${stats.getHourlyRate()} blok/saat\n⏳ **Süre:** ${stats.getUptime()}`,
+                15844367
+              );
+            }
+          }
+
+          await sleep(40);
+        } catch (err) {
+          unbreakableBlacklist.set(key, Date.now() + 30000);
+        }
+      }
+      continue;
+    }
+
+    // --- 🚶 2. YAKINDA BLOK YOKSA: EN YAKIN MADEN KÜMESİNE GİT ---
     const searchRadius = config.mining.searchRadius || 160;
     const clusterRadius = config.mining.clusterRadius || 20;
 
-    // Tüm aday blokları bul
     const blockPositions = bot.findBlocks({
       matching: matchingFn,
       maxDistance: searchRadius,
@@ -723,16 +775,11 @@ async function startMiningLoop() {
     if (blockPositions.length === 0) {
       currentClusterAnchor = null;
       console.log(chalk.gray(`[ARANIYOR] ${searchRadius} blok çevrede Netherite bloğu aranıyor...`));
-      if (config.antiCheat.antiAfkJiggle) {
-        bot.setControlState('sneak', true);
-        await sleep(100);
-        bot.setControlState('sneak', false);
-      }
       await sleep(1500);
       continue;
     }
 
-    // Kümeye kilitlenme
+    // Kümeleme mantığı
     let clusterBlocks = [];
     if (currentClusterAnchor) {
       clusterBlocks = blockPositions.filter((pos) => currentClusterAnchor.distanceTo(pos) <= clusterRadius);
@@ -750,66 +797,20 @@ async function startMiningLoop() {
       clusterBlocks = blockPositions.filter((pos) => currentClusterAnchor.distanceTo(pos) <= clusterRadius);
     }
 
-    // En yakın bloğu seç
     const botPos = bot.entity.position;
     clusterBlocks.sort((a, b) => botPos.distanceTo(a) - botPos.distanceTo(b));
     const targetPos = clusterBlocks[0];
     const targetKey = `${targetPos.x},${targetPos.y},${targetPos.z}`;
-    let dist = botPos.distanceTo(targetPos);
 
-    // Eğer blok uzaktaysa, hedefe yürü (1.8 metre yakınına kadar)
-    if (dist > reachDist) {
-      try {
-        console.log(chalk.blue(`[YAPAY ZEKA] Netherite bloğuna (${targetPos.x}, ${targetPos.y}, ${targetPos.z} | Mesafe: ${dist.toFixed(1)}m) gidiliyor...`));
-        const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 1.8);
-        await bot.pathfinder.goto(goal);
-        await sleep(100);
-      } catch (err) {
-        unbreakableBlacklist.set(targetKey, Date.now() + 15000);
-        continue;
-      }
-    }
-
-    // Bloğun tam önündeyiz! Bloğu kontrol et ve KAZ!
-    const targetBlock = bot.blockAt(targetPos);
-    if (!targetBlock || !matchingFn(targetBlock)) {
-      continue;
-    }
-
-    const currentDist = bot.entity.position.distanceTo(targetPos);
-    if (currentDist > reachDist + 1.2) {
-      unbreakableBlacklist.set(targetKey, Date.now() + 10000);
-      continue;
-    }
+    console.log(chalk.blue(`[YAPAY ZEKA] Netherite bloğuna (${targetPos.x}, ${targetPos.y}, ${targetPos.z} | Mesafe: ${botPos.distanceTo(targetPos).toFixed(1)}m) gidiliyor...`));
 
     try {
-      // Bloğa bak
-      const blockCenter = targetPos.offset(0.5, 0.5, 0.5);
-      await bot.lookAt(blockCenter, true);
-
-      // Bloğu kaz
-      await bot.dig(targetBlock);
-      lastBlockMinedTime = Date.now();
-      stats.recordBlockMined(targetBlock.name);
-
-      // Discord Dönüm Noktası
-      if (config.discord && config.discord.enabled) {
-        const milestone = config.discord.milestoneEvery || 250;
-        if (stats.totalMined % milestone === 0) {
-          sendDiscordNotification(
-            config.discord.webhookUrl,
-            `Dönüm Noktası: ${stats.totalMined} Blok Kırıldı!`,
-            `⛏️ **Toplam Kırılan:** ${stats.totalMined} blok\n⚡ **Hız:** ${stats.getHourlyRate()} blok/saat\n⏳ **Süre:** ${stats.getUptime()}`,
-            15844367
-          );
-        }
-      }
-
-      await sleep(35);
+      const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, 2.0);
+      await bot.pathfinder.goto(goal);
+      await sleep(100);
     } catch (err) {
-      console.log(chalk.yellow(`[MADENCİ] Blok kırılamadı (${targetBlock.name}), 30s pas geçiliyor...`));
-      unbreakableBlacklist.set(targetKey, Date.now() + 30000);
-      await sleep(50);
+      unbreakableBlacklist.set(targetKey, Date.now() + 15000);
+      continue;
     }
   }
 
