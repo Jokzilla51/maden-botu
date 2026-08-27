@@ -62,7 +62,16 @@ function handleChatCaptcha(bot, rawMessage, config) {
  * Sandık / GUI Doğrulama Menülerini Yakalama
  */
 function handleWindowCaptcha(bot, window, config) {
-  const title = (window.title || '').toLowerCase();
+  let titleStr = '';
+  try {
+    if (typeof window.title === 'string') {
+      titleStr = window.title;
+    } else if (window.title && typeof window.title === 'object') {
+      titleStr = window.title.text || JSON.stringify(window.title);
+    }
+  } catch (e) {}
+
+  const title = (titleStr || '').toLowerCase();
   if (title.includes('captcha') || title.includes('doğrulama') || title.includes('guvenlik') || title.includes('onay')) {
     console.log(chalk.yellow.bold(`[CAPTCHA MENÜSÜ] Ekrana doğrulama penceresi geldi: "${window.title}"`));
     

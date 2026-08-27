@@ -326,9 +326,11 @@ async function onSpawn() {
  */
 async function handleLobbySelection() {
   console.log(chalk.blue.bold('[LOBİ] Sunucu seçim kontrolü yapılıyor...'));
-  await sleep(config.lobbySelector.openDelayMs || 2500);
+  
+  // Lobide pusulanın envantere gelmesi için biraz bekle
+  await sleep(config.lobbySelector.openDelayMs || 3000);
 
-  // Envanterde pusula (compass) var mı kontrol et
+  // Pusulayı bul
   const compassName = config.lobbySelector.compassItem || 'compass';
   const compassItem = bot.inventory.items().find((item) => item.name.includes(compassName));
 
@@ -337,49 +339,70 @@ async function handleLobbySelection() {
     return;
   }
 
-  console.log(chalk.yellow.bold(`[LOBİ] Pusula bulundu (${compassItem.name}), eline alınıp sağ tıklanıyor...`));
-  try {
-    await bot.equip(compassItem, 'hand');
-    await sleep(500);
-    bot.activateItem(); // Pusulaya sağ tıkla
-  } catch (err) {
-    console.log(chalk.red(`[LOBİ HATA] Pusula kullanılamadı: ${err.message}`));
-    return;
-  }
+  console.log(chalk.yellow.bold(`[LOBİ] Pusula bulundu (${compassItem.name}, Slot: ${compassItem.slot}), eline alınıp sağ tıklanıyor...`));
 
-  // Sunucu Menüsünün açılmasını bekle
-  console.log(chalk.blue('[LOBİ] "Sunucu Menüsü" penceresinin açılması bekleniyor...'));
-  let menuWindow = null;
-  try {
-    menuWindow = await waitForWindow(bot, 6000);
-  } catch (err) {
-    console.log(chalk.yellow('[LOBİ] Menü penceresi açılmadı veya zaman aşımına uğradı.'));
-    return;
-  }
+  let menuOpened = false;
+  let attempts = 0;
 
-  try {
-    const targetItemName = config.lobbySelector.targetServerItem || 'diamond_block';
-    console.log(chalk.cyan(`[LOBİ] Menü açıldı ("${menuWindow.title || 'Menü'}"). Hedef: ${targetItemName}`));
-
-    // Hedef eşyayı bul (Elmas Blok - diamond_block)
-    const targetItem = menuWindow.items().find((item) => item.name === targetItemName || item.name.includes('diamond'));
-
-    if (targetItem) {
-      console.log(chalk.green.bold(`[LOBİ] Hedef sunucu eşyası bulundu: ${targetItem.name} (Slot: ${targetItem.slot}). Tıklanıyor...`));
-      await sleep(config.lobbySelector.clickDelayMs || 1000);
-      await bot.clickWindow(targetItem.slot, 0, 0); // Normal sol tık
-      console.log(chalk.green.bold('[LOBİ] Oyun sunucusuna bağlanılıyor, bekleniyor...'));
-      await sleep(config.lobbySelector.serverSwitchWaitMs || 5000);
-    } else {
-      console.log(chalk.yellow(`[LOBİ] Menüde ${targetItemName} bulunamadı! Menüdeki eşyalar:`));
-      menuWindow.items().forEach((i) => console.log(` - Slot ${i.slot}: ${i.name}`));
-    }
-  } catch (err) {
-    console.log(chalk.red(`[LOBİ HATA] Menü tıklama hatası: ${err.message}`));
-  } finally {
+  while (!menuOpened && attempts < 3) {
+    attempts++;
     try {
-      bot.closeWindow(menuWindow);
-    } catch (e) {}
+      // Pusulayı eline al
+      await bot.equip(compassItem, 'hand');
+      await sleep(600);
+
+      // Pusulayı sağ tıkla (activateItem)
+      bot.activateItem();
+
+      // Alternatif: bot.useOn (hava veya sağ tık paketi)
+      await sleep(300);
+      bot.activateItem();
+
+      console.log(chalk.blue(`[LOBİ] Pusula tıklandı (${attempts}. deneme), menü açılması bekleniyor...`));
+
+      // Menü açılmasını bekle
+      const menuWindow = await waitForWindow(bot, 5000);
+      menuOpened = true;
+
+      const targetItemName = config.lobbySelector.targetServerItem || 'diamond_block';
+      let titleStr = '';
+      try {
+        titleStr = typeof menuWindow.title === 'string' ? menuWindow.title : JSON.stringify(menuWindow.title);
+      } catch (e) {}
+
+      console.log(chalk.green.bold(`[LOBİ] Menü açıldı ("${titleStr}"). Hedef eşya aranıyor: ${targetItemName}...`));
+
+      // Menüdeki eşyaları listele ve hedefi bul
+      const items = menuWindow.items();
+      console.log(chalk.gray(`[LOBİ] Menüde ${items.length} adet eşya var:`));
+      items.forEach(i => console.log(chalk.gray(` - Slot ${i.slot}: ${i.name} (Adet: ${i.count})`)));
+
+      // Hedef eşyayı bul (Elmas Blok - diamond_block veya slot 11)
+      let targetItem = items.find((item) => item.name === targetItemName || item.name.includes('diamond'));
+
+      // Eğer isimle bulunamadıysa slot 11 veya ilk uygun bloğu kontrol et
+      if (!targetItem && items.length > 0) {
+        targetItem = items.find(i => i.slot === 11 || i.slot === 13) || items[0];
+      }
+
+      if (targetItem) {
+        console.log(chalk.green.bold(`[LOBİ] Hedef sunucu eşyasına tıklanıyor: ${targetItem.name} (Slot: ${targetItem.slot})`));
+        await sleep(config.lobbySelector.clickDelayMs || 1000);
+        await bot.clickWindow(targetItem.slot, 0, 0); // Normal sol tık
+        console.log(chalk.green.bold('[LOBİ] Oyun sunucusuna aktarma tıklandı! Sunucuya geçiş bekleniyor...'));
+        await sleep(config.lobbySelector.serverSwitchWaitMs || 6000);
+      } else {
+        console.log(chalk.red('[LOBİ HATA] Menüde tıklanacak hedef eşya bulunamadı!'));
+      }
+
+      try {
+        bot.closeWindow(menuWindow);
+      } catch (e) {}
+
+    } catch (err) {
+      console.log(chalk.yellow(`[LOBİ] Menü açılmadı (${err.message}), tekrar deneniyor...`));
+      await sleep(1500);
+    }
   }
 }
 
