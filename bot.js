@@ -380,7 +380,15 @@ async function handleLobbySelection() {
       const itemName = (slot11Item && slot11Item.name) || (diamondItem && diamondItem.name) || 'Elmas Blok';
 
       console.log(chalk.green.bold(`[LOBİ] Elmas Blok (Slot ${targetSlot} - ${itemName}) tıklanıyor...`));
-      await bot.clickWindow(targetSlot, 0, 0); // Normal sol tık
+      
+      // 1. Sol tık dene
+      await bot.clickWindow(targetSlot, 0, 0);
+      await sleep(600);
+
+      // 2. Sağ tık dene (bazı menüler sağ tık bekler)
+      try {
+        await bot.clickWindow(targetSlot, 1, 0);
+      } catch (e) {}
 
       console.log(chalk.green.bold('[LOBİ] Slot 11 tıklandı! Oyun sunucusuna bağlanılıyor, 6 saniye bekleniyor...'));
       await sleep(config.lobbySelector.serverSwitchWaitMs || 6000);
@@ -403,6 +411,21 @@ function onChat(username, message) {
 }
 
 function onMessageStr(message) {
+  const clean = message.replace(/§[0-9a-fk-or]/gi, '').trim();
+  if (clean.length > 0) {
+    console.log(chalk.cyan(`[SUNUCU] ${clean}`));
+  }
+
+  // Otomatik /login isteği yakalama (Eğer sunucu /login isterse)
+  if (clean.toLowerCase().includes('/login') || clean.toLowerCase().includes('giriş yap') || clean.toLowerCase().includes('şifrenizi')) {
+    if (config.auth && config.auth.password) {
+      setTimeout(() => {
+        console.log(chalk.blue(`[GİRİŞ] Sunucu giriş istedi, /login gönderiliyor...`));
+        bot.chat(`/login ${config.auth.password}`);
+      }, 1000);
+    }
+  }
+
   handleChatCaptcha(bot, message, config);
 }
 
